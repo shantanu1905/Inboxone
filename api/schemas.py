@@ -48,3 +48,11 @@ class profileUpdate(pydantic.BaseModel):
     organisation: Optional[str] = None  # Mark organisation as optional
     class Config:
        from_attributes=True
+
+
+
+class GetEmails(pydantic.BaseModel):
+    grant_id: str
+    limit : Optional[int] = None 
+    class Config:
+       from_attributes=True

@@ -33,4 +33,7 @@ class Watchlist(_database.Base):
 
     user = _orm.relationship("User", back_populates="watchlists")
 
+
+
+
 User.watchlists = _orm.relationship("Watchlist", order_by=Watchlist.id, back_populates="user")
