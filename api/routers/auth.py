@@ -272,7 +272,7 @@ async def verify_otp(userdata: _schemas.VerifyOtp, db: _orm.Session = _fastapi.D
     db.commit()
     response = {
             "detail":{
-            "is_verified": False,
+            "is_verified": True,
             "msg":"Account verified !"
             }
         }

@@ -10,7 +10,7 @@ app = FastAPI()
 
 Base.metadata.create_all(engine)
 app.include_router(auth.router)
-app.include_router(stock.router)
+# app.include_router(stock.router)
 app.include_router(nylas_admin.router)
 app.include_router(nylas_email.router)
 

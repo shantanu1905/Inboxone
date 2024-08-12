@@ -52,7 +52,21 @@ class profileUpdate(pydantic.BaseModel):
 
 
 class GetEmails(pydantic.BaseModel):
-    grant_id: str
+    grant_id: List[str]
     limit : Optional[int] = None 
+    class Config:
+       from_attributes=True
+
+
+
+class DeleteEmails(pydantic.BaseModel):
+    grant_id: str
+    thread_id : str
+    class Config:
+       from_attributes=True
+
+class ReadEmails(pydantic.BaseModel):
+    grant_id: str
+    thread_id : str
     class Config:
        from_attributes=True

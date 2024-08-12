@@ -1,4 +1,4 @@
-from fastapi import APIRouter ,  HTTPException  , status
+from fastapi import APIRouter ,  HTTPException
 import fastapi as _fastapi
 from fastapi.responses import JSONResponse , RedirectResponse
 import schemas as _schemas
@@ -7,10 +7,10 @@ import sqlalchemy.orm as _orm
 import auth_services as _services
 import database as _database
 from logger import Logger
-from typing import List
-from nylas import Client
-from .nylas_datatype import Grant , ListResponse
 import os 
+import requests
+from .nylas_datatype import *
+
 
 # Retrieve environment variables
 API_URI = os.environ.get("API_URI")
@@ -21,41 +21,14 @@ logger_instance = Logger()
 # Get a logger for your module
 logger = logger_instance.get_logger("stock market api")
 router = APIRouter(
-    tags=["Nylas_admin"],)
+    tags=["Nylas_Admin"],)
 
 
 
-def get_nylas_client(api_key: str) -> Client:
-    """Create and return a Nylas client with the given API key."""
-    try:
-        return Client(
-            api_key=api_key,
-            api_uri=API_URI
-        )
-    except Exception as e:
-        logger.error(f"Error creating Nylas client: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to create Nylas client.")
-
-
-def check_nylas_api_key(api_key: str):
-    """validates nylas api key"""
-    try:
-        nylas = Client(
-            api_key=api_key,
-            api_uri=API_URI
-        )
-
-        application = nylas.applications.info()
-        application_id = application[1]
-        return application_id
-    except Exception   as e:
-        raise HTTPException(status_code=400, detail="Could not verify access credential.")
-import json
 @router.get("/api/nylas/grants")
 async def list_grants(
     user: _schemas.User = _fastapi.Depends(_services.get_current_user),  # Fetch the current user
-    db: _orm.Session = _fastapi.Depends(_database.get_db)  # Dependency for database session
-
+    db: _orm.Session =_fastapi.Depends(_database.get_db)  # Dependency for database session
 ):
     try:
         # Fetch the current user's API key from the database
@@ -63,30 +36,49 @@ async def list_grants(
         if not db_user or not db_user.api_key:
             raise HTTPException(status_code=401, detail="API key not found for the current user")
 
-        # Initialize Nylas client with the user's API key
-        nylas = get_nylas_client(db_user.api_key)
-    
-        grantss = nylas.grants.list()
-        list_response = ListResponse(grants=grantss)
+        # Construct the URL with query parameters
+        url = f"https://api.us.nylas.com/v3/grants?limit=5"
+        headers = {
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {db_user.api_key}',
+        }
 
-        content={
-                    "status": "success",
-                    "message": "Grants retrieved successfully",
-                    "data": list_response
-                }
-        
-        return content
-    
+        # Make the GET request to Nylas API
+        response = requests.get(url, headers=headers)
+
+        # Check if the request was successful
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="Failed to retrieve grants from Nylas API")
+
+        # Parse the response JSON
+        response_data = response.json()
+
+        extracted_data = [
+                            {
+                                "id": item["id"],
+                                "grant_status": item["grant_status"],
+                                "provider": item["provider"],
+                                "email": item["email"],
+                                "created_at": item["created_at"],
+                                "updated_at": item["updated_at"]
+                            }
+                            for item in response_data["data"]
+                        ]
+
+        # Return the response as a JSONResponse
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": "Grants retrieved successfully",
+                "data": extracted_data  # Directly returning the data
+            },
+            status_code=200
+        )
+
     except Exception as e:
-        # Log the error
+        # Log the error and return a proper HTTP exception
         print(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail="Could not retrieve grants")
-    
-
-# Delete grants api route 
-
-# update grantsapi routes 
-
 
 
 
@@ -114,3 +106,30 @@ async def build_auth_url(
         return RedirectResponse(url=auth_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate auth URL: {str(e)}")
+    
+
+@router.post("/api/nylas/delete_grants/{grant_id}")
+async def delete_grant(
+    grant_id: str,
+    user: _schemas.User = _fastapi.Depends(_services.get_current_user),  # Fetch the current user
+    db: _orm.Session = _fastapi.Depends(_database.get_db)  # Dependency for database session
+):
+    try:
+        # Fetch the current user's API key from the database
+        db_user = db.query(_models.User).filter(_models.User.id == user.id).first()
+        if not db_user or not db_user.api_key:
+            raise HTTPException(status_code=401, detail="API key not found for the current user")
+        
+        nylas = get_nylas_client(db_user.api_key)
+        
+        response = nylas.grants.destroy(grant_id)
+
+        return {"status":"success", "message":"grant deleted successfully" , "data":response}
+
+
+    except Exception as e:
+        # Log the error and return a proper HTTP exception
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail={"status":"failed", "message":"Could not delete the grant" , "data":None})
+
+

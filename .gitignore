@@ -1,0 +1,5 @@
+.env
+api/__pycache__/
+api/routers/__pycache__/
+app.log
+database.db
