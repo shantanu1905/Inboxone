@@ -67,6 +67,7 @@ async def list_messages(
                     "thread_id": message.get("thread_id"),
                     # "body": message.get("body"),
                     "grant_id": message.get("grant_id"),
+                    "id":message.get("id"),
                     "snippet": message.get("snippet"),
                     #"bcc": message.get("bcc", []),  # Assuming bcc and cc may be missing
                     #"cc": message.get("cc", []),
@@ -95,7 +96,7 @@ async def list_messages(
 
 
 @router.post("/api/nylas/delete_messages")
-async def list_messages(
+async def delete_messages(
     del_email :_schemas.DeleteEmails,
     user: _schemas.User = _fastapi.Depends(_services.get_current_user),  # Fetch the current user
     db: _orm.Session =_fastapi.Depends(_database.get_db)  # Dependency for database session
@@ -112,13 +113,13 @@ async def list_messages(
             raise HTTPException(status_code=400, detail="Grant ID not found")
         
         # Retrieve the message ID from environment variable or database
-        thread_id = del_email.thread_id
-        if not thread_id:
+        id = del_email.id
+        if not id:
             raise HTTPException(status_code=400, detail="thread_id  not found")
         
         nylas = get_nylas_client(db_user.api_key)
         
-        response = nylas.messages.destroy(grant_id,thread_id)
+        response = nylas.messages.destroy(grant_id,id)
 
 
         return {"status":"success", "message":"Email deleted successfully" , "data":response}
@@ -151,14 +152,14 @@ async def list_messages(
             raise HTTPException(status_code=400, detail="Grant ID not found")
         
         # Retrieve the message ID from environment variable or database
-        thread_id = read_email.thread_id
-        if not thread_id:
+        id = read_email.id
+        if not id:
             raise HTTPException(status_code=400, detail="thread_id ID not found")
         
         
         extracted_messages = []
    
-        url = f"https://api.us.nylas.com/v3/grants/{grant_ids}/messages/{thread_id}"
+        url = f"https://api.us.nylas.com/v3/grants/{grant_ids}/messages/{id}"
         headers = {
             'Accept': 'application/json',
             'Authorization': f'Bearer {db_user.api_key}',

@@ -61,12 +61,12 @@ class GetEmails(pydantic.BaseModel):
 
 class DeleteEmails(pydantic.BaseModel):
     grant_id: str
-    thread_id : str
+    id : str
     class Config:
        from_attributes=True
 
 class ReadEmails(pydantic.BaseModel):
     grant_id: str
-    thread_id : str
+    id : str
     class Config:
        from_attributes=True
