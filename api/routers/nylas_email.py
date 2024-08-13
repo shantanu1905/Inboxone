@@ -62,7 +62,9 @@ async def list_messages(
 
             for message in response_data['data']:
                 extracted_data = {
+                    "starred":message.get('starred'),
                     "unread": message.get('unread'),
+                    "folders": message.get('folders'),
                     "subject": message.get("subject"),
                     "thread_id": message.get("thread_id"),
                     # "body": message.get("body"),
@@ -72,8 +74,8 @@ async def list_messages(
                     #"bcc": message.get("bcc", []),  # Assuming bcc and cc may be missing
                     #"cc": message.get("cc", []),
                     #"attachments": message.get("attachments", []),
-                    #"from": message.get("from"),
-                    #"to": message.get("to"),
+                    "from": message.get("from"),
+                    "to": message.get("to"),
                     #"reply_to": message.get("reply_to", [])
                 }
                 extracted_messages.append(extracted_data)
@@ -131,8 +133,6 @@ async def delete_messages(
         raise HTTPException(status_code=500, detail="Could not delete messages, please check thread_id or message_id")
     
 
-
-
 @router.post("/api/nylas/read_messages")
 # NEEDTO UPDATE SCHEMA WORKING FOR SINGLE GRANT ID WE HAVE TO TAKES LIST OF GRANT ID
 async def list_messages(
@@ -188,3 +188,95 @@ async def list_messages(
         # Log the error and return a proper HTTP exception
         print(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail="Could not retrieve messages")
+    
+
+
+
+    
+@router.post("/api/nylas/send_messages")
+# NEEDTO UPDATE SCHEMA WORKING FOR SINGLE GRANT ID WE HAVE TO TAKES LIST OF GRANT ID
+async def send_messages(
+    send_email :_schemas.SendEmails,
+    user: _schemas.User = _fastapi.Depends(_services.get_current_user),  # Fetch the current user
+    db: _orm.Session =_fastapi.Depends(_database.get_db)  # Dependency for database session
+):
+    """
+    {
+    "grant_id": "dacccswce2425534535"
+  "subject": "From Nylas",
+  "to": [
+    {
+      "email": "dorothy@example.com",
+      "name": "Dorothy Vaughan"
+    }
+  ],
+  "cc": [
+    {
+      "email": "George Washington Carver",
+      "name": "carver@example.com"
+    }
+  ],
+  "bcc": [
+    {
+      "email": "Albert Einstein",
+      "name": "al@example.com"
+    }
+  ],
+  "reply_to": [
+    {
+      "email": "skwolek@example.com",
+      "name": "Stephanie Kwolek"
+    }
+  ],
+  "body": "This email was sent using the Nylas email API. Visit https://nylas.com for details.",
+} 
+    
+    """
+    try:
+        # Fetch the current user's API key and grant ID from the database
+        db_user = db.query(_models.User).filter(_models.User.id == user.id).first()
+        if not db_user or not db_user.api_key:
+            raise HTTPException(status_code=401, detail="API key not found for the current user")
+        
+         # Retrieve the grant ID from environment variable or database
+        grant_id = send_email.grant_id
+        if not grant_id:
+            raise HTTPException(status_code=400, detail="Grant ID not found")
+        
+
+        nylas = get_nylas_client(db_user.api_key)
+
+        draft = nylas.drafts.create(
+            grant_id,
+            request_body={
+            "to": send_email.to,
+            "cc": send_email.cc,
+            "bcc": send_email.bcc,
+            "reply_to":send_email.reply_to ,
+            "subject": send_email.subject ,
+            "body": send_email.body,
+            }
+        )
+
+        draftSent = nylas.drafts.send(
+            grant_id,
+            draft[0].id,
+            )
+    
+        # Return the response as a dictionary
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": "Messages Send successfully",
+                "data": None
+            },
+            status_code=200
+        )
+    
+    except Exception as e:
+        # Log the error and return a proper HTTP exception
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Could not Send messages")
+    
+
+

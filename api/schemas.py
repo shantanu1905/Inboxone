@@ -57,6 +57,17 @@ class GetEmails(pydantic.BaseModel):
     class Config:
        from_attributes=True
 
+class SendEmails(pydantic.BaseModel):
+    to: List[dict]
+    cc :  Optional[List[dict]]  = None 
+    bcc :  Optional[List[dict]]  = None 
+    reply_to: List[dict]
+    subject: str
+    body : str
+    grant_id: str
+
+    class Config:
+       from_attributes=True
 
 
 class DeleteEmails(pydantic.BaseModel):
@@ -68,5 +79,23 @@ class DeleteEmails(pydantic.BaseModel):
 class ReadEmails(pydantic.BaseModel):
     grant_id: str
     id : str
+    class Config:
+       from_attributes=True
+
+class GenerateEmails(pydantic.BaseModel):
+    email_content: str
+    class Config:
+       from_attributes=True
+
+
+class AutoReply(pydantic.BaseModel):
+    to: List[dict]
+    cc :  Optional[List[dict]]  = None 
+    bcc :  Optional[List[dict]]  = None 
+    reply_to: List[dict]
+    body : str
+    grant_id: str
+    thread_id: str
+
     class Config:
        from_attributes=True

@@ -12,3 +12,5 @@ uvicorn
 python-multipart
 SQLAlchemy
 nylas
+google-generativeai
+langchain-community
