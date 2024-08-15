@@ -88,14 +88,23 @@ class GenerateEmails(pydantic.BaseModel):
        from_attributes=True
 
 
-class AutoReply(pydantic.BaseModel):
-    to: List[dict]
-    cc :  Optional[List[dict]]  = None 
-    bcc :  Optional[List[dict]]  = None 
-    reply_to: List[dict]
-    body : str
+
+class GenerateAutoReply(pydantic.BaseModel):
+
+    user_prompt : str
     grant_id: str
     thread_id: str
+
+    class Config:
+       from_attributes=True
+
+class ReplyEmails(pydantic.BaseModel):
+    to: List[dict]
+    reply_to: Optional[List[dict]]  = None 
+    subject: str
+    body : str
+    grant_id: str
+    id : str
 
     class Config:
        from_attributes=True

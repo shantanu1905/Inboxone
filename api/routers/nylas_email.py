@@ -135,7 +135,7 @@ async def delete_messages(
 
 @router.post("/api/nylas/read_messages")
 # NEEDTO UPDATE SCHEMA WORKING FOR SINGLE GRANT ID WE HAVE TO TAKES LIST OF GRANT ID
-async def list_messages(
+async def read_messages(
     read_email :_schemas.ReadEmails,
     user: _schemas.User = _fastapi.Depends(_services.get_current_user),  # Fetch the current user
     db: _orm.Session =_fastapi.Depends(_database.get_db)  # Dependency for database session
@@ -154,7 +154,7 @@ async def list_messages(
         # Retrieve the message ID from environment variable or database
         id = read_email.id
         if not id:
-            raise HTTPException(status_code=400, detail="thread_id ID not found")
+            raise HTTPException(status_code=400, detail=" ID not found")
         
         
         extracted_messages = []
@@ -268,6 +268,60 @@ async def send_messages(
             content={
                 "status": "success",
                 "message": "Messages Send successfully",
+                "data": None
+            },
+            status_code=200
+        )
+    
+    except Exception as e:
+        # Log the error and return a proper HTTP exception
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Could not Send messages")
+    
+
+
+    
+@router.post("/api/nylas/reply_messages")
+# NEEDTO UPDATE SCHEMA WORKING FOR SINGLE GRANT ID WE HAVE TO TAKES LIST OF GRANT ID
+async def reply_messages(
+    reply_email :_schemas.ReplyEmails,
+    user: _schemas.User = _fastapi.Depends(_services.get_current_user),  # Fetch the current user
+    db: _orm.Session =_fastapi.Depends(_database.get_db)  # Dependency for database session
+):
+    """
+    This endpoint is to reply a message(thread)
+    
+    """
+    try:
+        # Fetch the current user's API key and grant ID from the database
+        db_user = db.query(_models.User).filter(_models.User.id == user.id).first()
+        if not db_user or not db_user.api_key:
+            raise HTTPException(status_code=401, detail="API key not found for the current user")
+        
+         # Retrieve the grant ID from environment variable or database
+        grant_id = reply_email.grant_id
+        if not grant_id:
+            raise HTTPException(status_code=400, detail="Grant ID not found")
+        
+
+        nylas = get_nylas_client(db_user.api_key)
+
+        message = nylas.messages.send(
+                                grant_id,
+                                request_body={
+                                    "to": reply_email.to,
+                                    "reply_to":reply_email.reply_to,
+                                    "subject": reply_email.subject,
+                                    "body": reply_email.body,
+                                    "reply_to_message_id": reply_email.id
+                                }
+                                )
+    
+        # Return the response as a dictionary
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": f"Reply Send successfully for message id : {reply_email.id}",
                 "data": None
             },
             status_code=200
