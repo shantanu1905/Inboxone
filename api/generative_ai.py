@@ -2,8 +2,10 @@ import google.generativeai as genai
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import initialize_agent, AgentType
 from dotenv import load_dotenv
+from datetime import datetime
+import pytz  # You'll need to install the pytz library for timezone handling
 #from langchain_google_genai import ChatGoogleGenerativeAI
-
+import requests
 
 load_dotenv()
 
@@ -91,3 +93,94 @@ def generate_email_reply(email_content: str, api_key: str ,username: str , user_
     # Return the generated reply
     return response.text
 
+
+
+
+def fetch_events_from_calendar(grants_data, api_key):
+    """
+    Fetches event data from the Nylas API for multiple grants and emails and extracts specific fields.
+
+    Args:
+    - grants_data (list): A list of dictionaries with 'id' and 'email' for grants.
+    - api_key (str): The API key for authorization.
+
+    Returns:
+    - list: A list of dictionaries containing the extracted event data for each grant and email.
+    """
+    def convert_unix_to_readable(timestamp, timezone_str):
+        tz = pytz.timezone(timezone_str)
+        return datetime.fromtimestamp(timestamp, tz).strftime('%Y-%m-%d %H:%M:%S')
+    
+    all_extracted_data = []
+
+    for grant in grants_data:
+        grant_id = grant.get("id")
+        calendar_id = grant.get("email")
+        
+        if not grant_id or not calendar_id:
+            continue  # Skip if either grant_id or calendar_id is missing
+        
+        # Construct the API URL
+        url = f"https://api.us.nylas.com/v3/grants/{grant_id}/events?calendar_id={calendar_id}"
+
+        # Set up the headers for the API request
+        headers = {
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+        }
+
+        # Make the GET request to the API
+        response = requests.get(url, headers=headers)
+
+        # Check if the request was successful
+        if response.status_code != 200:
+            print(f"Failed to retrieve events for grant ID {grant_id} and calendar ID {calendar_id}")
+            continue
+
+        # Parse the JSON response
+        data = response.json()
+
+        # Extract the desired fields
+        for event in data.get("data", []):
+            when_data = event.get("when", {})
+            start_time = when_data.get("start_time")
+            end_time = when_data.get("end_time")
+            start_timezone = when_data.get("start_timezone", "UTC")
+            end_timezone = when_data.get("end_timezone", "UTC")
+
+            creator_data = event.get("creator", {})
+            creator_name = creator_data.get("name", "N/A")
+            creator_email = creator_data.get("email", "N/A")
+
+            conferencing_data = event.get("conferencing", {})
+            conferencing_provider = conferencing_data.get("provider", "N/A")
+            conferencing_details = conferencing_data.get("details", {})
+            meeting_code = conferencing_details.get("meeting_code", "N/A")
+            conferencing_url = conferencing_details.get("url", "N/A")
+
+            organizer_data = event.get("organizer", {})
+            organizer_name = organizer_data.get("name", "N/A")
+            organizer_email = organizer_data.get("email", "N/A")
+
+            extracted_info = {
+                "busy": event.get("busy"),
+                "calendar_id": event.get("calendar_id"),
+                "conferencing_provider": conferencing_provider,
+                "conferencing_meeting_code": meeting_code,
+                "conferencing_url": conferencing_url,
+                "organizer_name": organizer_name,
+                "organizer_email": organizer_email,
+                "title": event.get("title"),
+                "creator_name": creator_name,
+                "creator_email": creator_email,
+                "id": event.get("id"),
+                "object": event.get("object"),
+                "start_time": convert_unix_to_readable(start_time, start_timezone) if start_time else None,
+                "end_time": convert_unix_to_readable(end_time, end_timezone) if end_time else None,
+                "created_at": datetime.fromtimestamp(event.get("created_at"), tz=pytz.utc).strftime('%Y-%m-%d %H:%M:%S') if event.get("created_at") else None,
+                "updated_at": datetime.fromtimestamp(event.get("updated_at"), tz=pytz.utc).strftime('%Y-%m-%d %H:%M:%S') if event.get("updated_at") else None,
+            }
+            all_extracted_data.append(extracted_info)
+
+    return all_extracted_data

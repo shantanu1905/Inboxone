@@ -12,7 +12,7 @@ from nylas import Client
 from logger import Logger
 import os 
 from .nylas_datatype import *
-from generative_ai import improve_email , generate_email_reply
+from generative_ai import improve_email , generate_email_reply, fetch_events_from_calendar
 from dotenv import load_dotenv
 import json
 import requests
@@ -70,7 +70,6 @@ async def generate_messages(
         print(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail="Could not Generate email")
     
-
     
 @router.post("/api/nylas/generate_autorelpy_messages")
 # NEEDTO UPDATE SCHEMA WORKING FOR SINGLE GRANT ID WE HAVE TO TAKES LIST OF GRANT ID
@@ -145,6 +144,61 @@ async def generate_autorelpy_messages(
                 "status": "success",
                 "message": "Reply Generated Successfully",
                 "data": final_resposne
+            },
+            status_code=200
+        )
+    
+    except Exception as e:
+        # Log the error and return a proper HTTP exception
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Could not send autoreply messages")
+    
+
+
+  
+    
+@router.post("/api/nylas/calendar_chat")
+# NEEDTO UPDATE SCHEMA WORKING FOR SINGLE GRANT ID WE HAVE TO TAKES LIST OF GRANT ID
+async def chat_with_calendar(
+    chat :_schemas.CalendarChat,
+    user: _schemas.User = _fastapi.Depends(_services.get_current_user),  # Fetch the current user
+    db: _orm.Session =_fastapi.Depends(_database.get_db)  # Dependency for database session
+):
+    """
+    This endpoint generates email for message(thread)
+  
+    """
+    try:
+         # Fetch the current user's API key and grant IDs from the database
+        db_user = db.query(_models.User).filter(_models.User.id == user.id).first()
+        if not db_user or not db_user.api_key:
+            raise HTTPException(status_code=401, detail="API key not found for the current user")
+
+        # Fetch the current user's grants from the database
+        grants = db.query(_models.Grant).filter(_models.Grant.user_id == user.id).all()
+        
+        if not grants:
+            raise HTTPException(status_code=404, detail="No grants found for the current user")
+        
+
+        # Extract the required data from the grants
+        grants_data = [
+            {
+                "id": grant.id,
+                "email": grant.email
+            }
+            for grant in grants
+        ]
+
+        dat = fetch_events_from_calendar(grants_data ,db_user.api_key)
+        print(dat)
+
+        # Return the response as a dictionary
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": "Reply Generated Successfully",
+                "data": dat
             },
             status_code=200
         )

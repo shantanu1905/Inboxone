@@ -108,3 +108,10 @@ class ReplyEmails(pydantic.BaseModel):
 
     class Config:
        from_attributes=True
+
+
+class CalendarChat(pydantic.BaseModel):
+
+    user_prompt : str
+    class Config:
+       from_attributes=True

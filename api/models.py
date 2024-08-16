@@ -34,6 +34,23 @@ class Watchlist(_database.Base):
     user = _orm.relationship("User", back_populates="watchlists")
 
 
+class Grant(_database.Base):
+    __tablename__ = "grants"
+    
+    id = _sql.Column(_sql.String, primary_key=True, index=True)
+    grant_status = _sql.Column(_sql.String)
+    provider = _sql.Column(_sql.String)
+    email = _sql.Column(_sql.String, index=True)
+    created_at = _sql.Column(_sql.DateTime, default=_dt.datetime.utcnow)
+    updated_at = _sql.Column(_sql.DateTime, default=_dt.datetime.utcnow, onupdate=_dt.datetime.utcnow)
+    
+    # Foreign key to User table
+    user_id = _sql.Column(_sql.Integer, _sql.ForeignKey('users.id'))
+    # Relationship with User
+    user = _orm.relationship("User", back_populates="grants")
 
-
+# Add this to the User class to complete the relationship
+User.grants = _orm.relationship("Grant", back_populates="user")
 User.watchlists = _orm.relationship("Watchlist", order_by=Watchlist.id, back_populates="user")
+
+
