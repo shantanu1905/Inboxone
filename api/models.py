@@ -49,7 +49,22 @@ class Grant(_database.Base):
     # Relationship with User
     user = _orm.relationship("User", back_populates="grants")
 
+class Calendar(_database.Base):
+    __tablename__ = "calendars"
+
+    id = _sql.Column(_sql.String, primary_key=True, index=True)
+    name = _sql.Column(_sql.String, nullable=False)
+    grant_id = _sql.Column(_sql.String, nullable=False, index=True)
+    object = _sql.Column(_sql.String, nullable=False)
+    is_primary = _sql.Column(_sql.Boolean, default=False)
+    read_only = _sql.Column(_sql.Boolean, default=False)
+    is_owned_by_user = _sql.Column(_sql.Boolean, default=True)
+
+    # Foreign key to the User model
+    user_id = _sql.Column(_sql.Integer, _sql.ForeignKey("users.id"), nullable=False)
+
 # Add this to the User class to complete the relationship
+user = _orm.relationship("User", back_populates="calendars")
 User.grants = _orm.relationship("Grant", back_populates="user")
 User.watchlists = _orm.relationship("Watchlist", order_by=Watchlist.id, back_populates="user")
 

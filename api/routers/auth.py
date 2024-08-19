@@ -284,7 +284,6 @@ async def verify_otp(userdata: _schemas.VerifyOtp, db: _orm.Session = _fastapi.D
 
 
 
-
 @router.get("/api/users/sync_grants")
 async def sync_grants(
     
@@ -370,3 +369,127 @@ async def sync_grants(
         },
         status_code=status.HTTP_200_OK
     )
+
+
+@router.get("/api/users/sync_calendars")
+async def sync_calendars(
+    user: _schemas.User = _fastapi.Depends(_services.get_current_user),
+    db: _orm.Session = _fastapi.Depends(_database.get_db)
+):
+ 
+
+    # Retrieve the user information
+    db_user = db.query(_models.User).filter(_models.User.id == user.id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Fetch the current user's API key from the database
+    if not db_user.api_key:
+        raise HTTPException(status_code=401, detail="API key not found for the current user")
+    
+    # Fetch the current user's grants from the database
+    grants = db.query(_models.Grant).filter(_models.Grant.user_id == user.id).all()
+
+    print(grants)
+    
+    if not grants:
+        raise HTTPException(status_code=404, detail="No grants found for the current user")
+    
+    # Extract the required data from the grants
+    grants_data = [
+        {
+            "id": grant.id,
+            "email": grant.email
+        }
+        for grant in grants
+    ]
+
+    extracted_data = []
+
+    # Loop through each grant and sync calendars
+    for grant in grants_data:
+        grant_id = grant["id"]
+        logger.info(f"Syncing calendars for grant ID {grant_id}")
+
+        # Construct the URL with the grant ID
+        url = f"https://api.us.nylas.com/v3/grants/{grant_id}/calendars"
+        headers = {
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {db_user.api_key}',
+        }
+
+        # Make the GET request to Nylas API
+        response = requests.get(url, headers=headers)
+
+        # Check if the request was successful
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"Failed to retrieve calendars from Nylas API for grant ID {grant_id}")
+
+        # Parse the response JSON
+        response_data = response.json()
+
+        # Extract only the required fields
+        filtered_data = [
+            {
+                "name": item.get("name"),
+                "grant_id": grant_id,
+                "id": item.get("id"),
+                "object": item.get("object"),
+                "is_primary": item.get("is_primary"),
+                "read_only": item.get("read_only"),
+                "is_owned_by_user": item.get("is_owned_by_user")
+            }
+            for item in response_data["data"]
+        ]
+
+        extracted_data.append(filtered_data)
+
+        # Update or create calendars in the database
+    for calendar_data in extracted_data:
+        for calendar in calendar_data:
+            # Check if the calendar already exists in the database
+            db_calendar = db.query(_models.Calendar).filter(
+                _models.Calendar.id == calendar["id"],
+                _models.Calendar.grant_id == calendar["grant_id"],
+                _models.Calendar.user_id == user.id
+            ).first()
+
+            if db_calendar:
+                # Update existing calendar
+                db_calendar.name = calendar["name"]
+                db_calendar.object = calendar["object"]
+                db_calendar.is_primary = calendar["is_primary"]
+                db_calendar.read_only = calendar["read_only"]
+                db_calendar.is_owned_by_user = calendar["is_owned_by_user"]
+            else:
+                # Create a new calendar record
+                new_calendar = _models.Calendar(
+                    id=calendar["id"],
+                    name=calendar["name"],
+                    grant_id=calendar["grant_id"],
+                    object=calendar["object"],
+                    is_primary=calendar["is_primary"],
+                    read_only=calendar["read_only"],
+                    is_owned_by_user=calendar["is_owned_by_user"],
+                    user_id=user.id  # Associate the calendar with the current user
+                )
+                db.add(new_calendar)
+        
+        # Commit the changes to the database
+        db.commit()
+
+    logger.info(f"Calendars synced successfully for user with email {user.email}")
+
+    return JSONResponse(
+        content={
+            "status": "success",
+            "message": "Calendars synced successfully",
+        },
+        status_code=status.HTTP_200_OK
+    )
+
+
+
+
+
+
