@@ -16,3 +16,4 @@ google-generativeai
 langchain-community
 langchain-google-genai
 pytz
+apscheduler

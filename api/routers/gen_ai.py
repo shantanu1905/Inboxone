@@ -8,14 +8,16 @@ import auth_services as _services
 import database as _database
 from logger import Logger
 from typing import List
-from nylas import Client
 from logger import Logger
+from sqlalchemy.orm import joinedload
 import os 
 from .nylas_datatype import *
 from generative_ai import improve_email , generate_email_reply, fetch_events_from_calendar
 from dotenv import load_dotenv
 import json
 import requests
+from datetime import datetime
+import pytz  # You'll need to install the pytz library for timezone handling
 
 load_dotenv()
 
@@ -157,56 +159,150 @@ async def generate_autorelpy_messages(
 
   
     
-@router.post("/api/nylas/calendar_chat")
-# NEEDTO UPDATE SCHEMA WORKING FOR SINGLE GRANT ID WE HAVE TO TAKES LIST OF GRANT ID
-async def chat_with_calendar(
-    chat :_schemas.CalendarChat,
-    user: _schemas.User = _fastapi.Depends(_services.get_current_user),  # Fetch the current user
-    db: _orm.Session =_fastapi.Depends(_database.get_db)  # Dependency for database session
-):
+@router.get("/api/nylas/sync_calendar_events")
+        
+def sync_calendar_events(db: _orm.Session =_fastapi.Depends(_database.get_db) ,
+                               user: _schemas.User = _fastapi.Depends(_services.get_current_user)):
     """
-    This endpoint generates email for message(thread)
-  
+    Fetches event data from the Nylas API for multiple grants and emails, extracts specific fields,
+    and saves the data to the database. Deletes old entries from the database if their start_time and
+    end_time are in the past.
+
+    Args:
+    - grants_data (list): A list of dictionaries with 'id' and 'grant_id' for grants.
+    - api_key (str): The API key for authorization.
+    - db (Session): The SQLAlchemy database session.
+    - user_id (int): The ID of the user to whom the calendar data belongs.
+
+    Returns:
+    - list: A list of dictionaries containing the extracted event data for each grant and email.
     """
+    def convert_unix_to_datetime(timestamp, timezone_str):
+        tz = pytz.timezone(timezone_str)
+        return datetime.fromtimestamp(timestamp, tz)
+    
     try:
-         # Fetch the current user's API key and grant IDs from the database
+        # Fetch the current user's API key from the database
         db_user = db.query(_models.User).filter(_models.User.id == user.id).first()
         if not db_user or not db_user.api_key:
             raise HTTPException(status_code=401, detail="API key not found for the current user")
 
-        # Fetch the current user's grants from the database
-        grants = db.query(_models.Grant).filter(_models.Grant.user_id == user.id).all()
-        
-        if not grants:
-            raise HTTPException(status_code=404, detail="No grants found for the current user")
+                
+        # Perform the join between Calendar and Grant tables
+        result = (
+                    db.query(_models.Calendar.id, _models.Grant.email, _models.Calendar.grant_id)
+                    .join(_models.Grant, _models.Calendar.grant_id == _models.Grant.id)
+                    .filter(_models.Calendar.user_id == user.id)
+                    .all()
+                )
         
 
         # Extract the required data from the grants
-        grants_data = [
+        calendar_data = [
             {
-                "id": grant.id,
-                "email": grant.email
+                "id":calendar_id,
+                "grant_id": grant_id,
+                "email":grant_email
             }
-            for grant in grants
+            for calendar_id,grant_email, grant_id  in result
         ]
 
-        dat = fetch_events_from_calendar(grants_data ,db_user.api_key)
-        print(dat)
+        # Next part of code execution started
+        
+        all_extracted_data = []
 
-        # Return the response as a dictionary
-        return JSONResponse(
-            content={
-                "status": "success",
-                "message": "Reply Generated Successfully",
-                "data": dat
-            },
-            status_code=200
-        )
-    
+        for events in calendar_data:
+            grant_id = events.get("grant_id")
+            calendar_id = events.get("id")
+            
+            if not grant_id or not calendar_id:
+                continue  # Skip if either grant_id or calendar_id is missing
+            
+            # Construct the API URL
+            url = f"https://api.us.nylas.com/v3/grants/{grant_id}/events?calendar_id={calendar_id}"
+
+            # Set up the headers for the API request
+            headers = {
+                'Accept': 'application/json',
+                'Authorization': f'Bearer {db_user.api_key}',
+                'Content-Type': 'application/json',
+            }
+
+            # Make the GET request to the API
+            response = requests.get(url, headers=headers)
+
+            # Check if the request was successful
+            if response.status_code != 200:
+                print(f"Failed to retrieve events for grant ID {grant_id} and calendar ID {calendar_id}")
+                continue
+
+            # Parse the JSON response
+            data = response.json()
+
+            # Extract the desired fields
+            for event in data.get("data", []):
+                when_data = event.get("when", {})
+                start_time = when_data.get("start_time")
+                end_time = when_data.get("end_time")
+                start_timezone = when_data.get("start_timezone", "UTC")
+                end_timezone = when_data.get("end_timezone", "UTC")
+
+                creator_data = event.get("creator", {})
+                creator_name = creator_data.get("name", "N/A")
+                creator_email = creator_data.get("email", "N/A")
+
+                conferencing_data = event.get("conferencing", {})
+                conferencing_provider = conferencing_data.get("provider", "N/A")
+                conferencing_details = conferencing_data.get("details", {})
+                meeting_code = conferencing_details.get("meeting_code", "N/A")
+                conferencing_url = conferencing_details.get("url", "N/A")
+
+                organizer_data = event.get("organizer", {})
+                organizer_name = organizer_data.get("name", "N/A")
+                organizer_email = organizer_data.get("email", "N/A")
+
+                start_time_readable = convert_unix_to_datetime(start_time, start_timezone) if start_time else None
+                end_time_readable = convert_unix_to_datetime(end_time, end_timezone) if end_time else None
+
+                extracted_info = {
+                    "busy": event.get("busy"),
+                    "calendar_id": event.get("calendar_id"),
+                    "conferencing_provider": conferencing_provider,
+                    "conferencing_meeting_code": meeting_code,
+                    "conferencing_url": conferencing_url,
+                    "organizer_name": organizer_name,
+                    "organizer_email": organizer_email,
+                    "title": event.get("title"),
+                    "creator_name": creator_name,
+                    "creator_email": creator_email,
+                    "id": event.get("id"),
+                    "object": event.get("object"),
+                    "start_time": start_time_readable,
+                    "end_time": end_time_readable,
+                    "created_at": datetime.fromtimestamp(event.get("created_at"), tz=pytz.utc) if event.get("created_at") else None,
+                    "updated_at": datetime.fromtimestamp(event.get("updated_at"), tz=pytz.utc) if event.get("updated_at") else None,
+                    "user_id": db_user.id,  # Associate the event with the user
+                }
+                all_extracted_data.append(extracted_info)
+
+                # Save the extracted info to the database
+                db_event = _models.CalendarData(**extracted_info)
+                db.add(db_event)
+                db.commit()
+
+        # After fetching and inserting events, delete old events
+        current_time = datetime.now(pytz.utc).strftime('%Y-%m-%d %H:%M:%S')
+        db.query(_models.CalendarData).filter(
+            _models.CalendarData.user_id == db_user.id,
+            (_models.CalendarData.start_time < current_time) & (_models.CalendarData.end_time < current_time)
+        ).delete(synchronize_session=False)
+        db.commit()
+
+        return all_extracted_data
     except Exception as e:
         # Log the error and return a proper HTTP exception
         print(f"An error occurred: {e}")
-        raise HTTPException(status_code=500, detail="Could not send autoreply messages")
+        raise HTTPException(status_code=500, detail="sync failed !")
     
 
 

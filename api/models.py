@@ -63,9 +63,36 @@ class Calendar(_database.Base):
     # Foreign key to the User model
     user_id = _sql.Column(_sql.Integer, _sql.ForeignKey("users.id"), nullable=False)
 
+class CalendarData(_database.Base):
+    __tablename__ = "calendar_event"
+
+    id = _sql.Column(_sql.String, primary_key=True, index=True)
+    calendar_id = _sql.Column(_sql.String, nullable=False)
+    conferencing_provider = _sql.Column(_sql.String, nullable=True)
+    conferencing_meeting_code = _sql.Column(_sql.String, nullable=True)
+    conferencing_url = _sql.Column(_sql.String, nullable=True)
+    organizer_name = _sql.Column(_sql.String, nullable=True)
+    organizer_email = _sql.Column(_sql.String, nullable=False)
+    title = _sql.Column(_sql.String, nullable=False)
+    creator_name = _sql.Column(_sql.String, nullable=True)
+    creator_email = _sql.Column(_sql.String, nullable=True)
+    object = _sql.Column(_sql.String, nullable=False)
+    start_time = _sql.Column(_sql.DateTime, nullable=False)
+    end_time = _sql.Column(_sql.DateTime, nullable=False)
+    created_at = _sql.Column(_sql.DateTime, default=_dt.datetime.utcnow)
+    updated_at = _sql.Column(_sql.DateTime, default=_dt.datetime.utcnow, onupdate=_dt.datetime.utcnow)
+    busy = _sql.Column(_sql.Boolean, default=False)
+    # Foreign key to User model
+    user_id = _sql.Column(_sql.Integer, _sql.ForeignKey("users.id"), nullable=False)
+    user = _orm.relationship("User", back_populates="calendar_events")
+
+
+
+
 # Add this to the User class to complete the relationship
 user = _orm.relationship("User", back_populates="calendars")
 User.grants = _orm.relationship("Grant", back_populates="user")
 User.watchlists = _orm.relationship("Watchlist", order_by=Watchlist.id, back_populates="user")
+User.calendar_events = _orm.relationship("CalendarData", back_populates="user")
 
 
