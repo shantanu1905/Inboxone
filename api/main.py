@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-
+from scheduler_task import scheduler
 from starlette.requests import Request
 from database import Base , engine
 from routers import auth , stock , nylas_admin , nylas_email , gen_ai
@@ -17,7 +17,9 @@ app.include_router(gen_ai.router)
 
 
 
-
+@app.on_event("shutdown")
+def shutdown_event():
+    scheduler.shutdown()
 
 
 
