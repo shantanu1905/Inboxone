@@ -26,7 +26,7 @@ input_db = SQLDatabase.from_uri("sqlite:///./database.db")
 # Initialize the LLM using Google Generative AI
 llm_1 = ChatGoogleGenerativeAI(
     model="gemini-1.5-pro",
-    google_api_key="AIzaSyBdQyoRkPk3NqVAIN2iWMKmUB_0Ee6AWq8"
+    google_api_key="AIzaSyBdQyoRkPk3NqthrhffhfjVAIN2iWMKmUB_0Ee6AWq8"
 )
 
 # Create an SQLDatabaseChain instance for interacting with the database using LLM
