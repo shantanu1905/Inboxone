@@ -174,3 +174,46 @@ def get_calendar_events(db: _orm.Session = _fastapi.Depends(_database.get_db),
         # Log the error and return a proper HTTP exception
         print(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve calendar events")
+
+
+@router.post("/api/nylas/delete_calendar_event")
+async def delete_calendar_event(
+    del_event :_schemas.DeleteEvents,
+    user: _schemas.User = _fastapi.Depends(_services.get_current_user),  # Fetch the current user
+    db: _orm.Session =_fastapi.Depends(_database.get_db)  # Dependency for database session
+):
+    try:
+        # Fetch the current user's API key and grant ID from the database
+        db_user = db.query(_models.User).filter(_models.User.id == user.id).first()
+        if not db_user or not db_user.api_key:
+            raise HTTPException(status_code=401, detail="API key not found for the current user")
+        
+        # Retrieve the grant ID from environment variable or database
+        grant_id = del_event.grant_id
+        if not grant_id:
+            raise HTTPException(status_code=400, detail="Grant ID not found")
+        
+        # Retrieve the event_id from environment variable or database
+        calendar_event_id = del_event.id
+        if not calendar_event_id:
+            raise HTTPException(status_code=400, detail="event_id  not found")
+        
+        nylas = get_nylas_client(db_user.api_key)
+        
+        event = nylas.events.destroy(
+                                grant_id,
+                                calendar_event_id,
+                                query_params={
+                                "calendar_id": del_event.calendar_id
+                                }
+                            )
+
+
+        return {"status":"success", "message":"Calendar Event deleted successfully" , "data":event}
+
+    
+    except Exception as e:
+        # Log the error and return a proper HTTP exception
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Could not delete calendar, please check id or grant_id , calendar_id")
+    
