@@ -1,23 +1,21 @@
 import google.generativeai as genai
+from langchain_community.utilities import SQLDatabase
+from langchain.tools import Tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import initialize_agent, AgentType
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
 from dotenv import load_dotenv
-from datetime import datetime
-import pytz  # You'll need to install the pytz library for timezone handling
-#from langchain_google_genai import ChatGoogleGenerativeAI
 import sqlalchemy.orm as _orm
-import database as _database
-import auth_services as _services
-import schemas as _schemas
-import auth_services as _services
-import fastapi as _fastapi
 import models as _models
-from fastapi import APIRouter ,  HTTPException
-
-import requests
-
+from nylas import Client
+import os
+import datetime
 load_dotenv()
 
+# Retrieve environment variables
+API_URI = os.environ.get("API_URI")
+gemini_api_key = os.environ.get("GEMINI_API_KEYY")
 
 # Function to improve email structure and grammar
 def improve_email(email_content, gemini_api_key, user_name ):
@@ -48,7 +46,6 @@ def improve_email(email_content, gemini_api_key, user_name ):
     
     # Parse the response and return the result
     return response.text
-
 
 
 def generate_email_reply(email_content: str, api_key: str ,username: str , user_prompt: str) -> str:
@@ -102,5 +99,118 @@ def generate_email_reply(email_content: str, api_key: str ,username: str , user_
     # Return the generated reply
     return response.text
 
+
+def delete_calendar_event(nylas_api_key:str,nylas_api_uri:str , nylas_grant_id:str, id:str , calendar_id:str , user_id:str ):
+    """
+    This endpoint is used to delete calendar events 
+    """
+    nylas = Client(nylas_api_key,nylas_api_uri)
+    event_id = id
+    db= _orm.Session
+    # Perform the join between CalendarData and Grant based on the organizer's email
+    result = (
+        db.query(_models.CalendarData, _models.Grant.id.label('grant_id'))
+        .join(_models.Grant, _models.Grant.email == _models.CalendarData.organizer_email)
+        .filter(_models.CalendarData.user_id == user_id)
+        .all()
+    )
+
+    # Extract the required data from the result
+    calendar_data = [
+        {
+            "id": calendar_event.id,
+            "calendar_id": calendar_event.calendar_id,
+            "grant_id": grant_id
+        }
+        for calendar_event, grant_id in result
+    ]
+
+    event = nylas.events.destroy(
+    calendar_data['grant_id'],
+    calendar_data['id'],
+    query_params={
+      "calendar_id":  calendar_data['calendar_id']
+    }
+    )
+    
+    return event
+
+
+class CalendarEventAgent:
+    def __init__(self, user_id: str, db_uri: str, google_api_key: str, llm_model: str = "gemini-pro"):
+        """
+        Initialize the CalendarEventAgent with the database connection and LLM model.
+        
+        :param user_id: The ID of the user for whom the events are being fetched.
+        :param db_uri: URI for the SQLite database.
+        :param google_api_key: Google API key for the LLM.
+        :param llm_model: Model name for the LLM (default: "gemini-pro").
+        """
+        self.user_id = user_id
+        self.llm = ChatGoogleGenerativeAI(model=llm_model, google_api_key=google_api_key)
+        self.db = SQLDatabase.from_uri(db_uri)
+        self.tools = self._create_tools()
+        self.agent = self._initialize_agent()
+
+    def _create_tools(self):
+        """Creates tools for listing and summarizing events."""
+        list_events_tool = Tool.from_function(
+            func=self.list_events,
+            name="ListEvents",
+            description="Retrieve all calendar events/meetings/call for the specified user."
+        )
+
+        # Tool to provide details for a specific event based on its title
+        event_details_tool = Tool.from_function(
+                            func=self.get_event_details,
+                            name="GetEventDetails",
+                            description="Retrieve details for a specific event, meeting, or call based on the title provided."
+                        )
+
+
+        return [list_events_tool,event_details_tool]
+
+    def _initialize_agent(self): 
+        """Initializes the AI agent with the available tools."""
+        return initialize_agent(
+            tools=self.tools,
+            agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+            llm=self.llm,
+            verbose=True
+        )
+    
+
+
+    def list_events(self, *args, **kwargs):
+        """Fetches all events for the user from the calendar_event table."""
+        query_result = self.db.run(f"SELECT * FROM calendar_event WHERE user_id = {self.user_id};")
+        return query_result
+    
+    
+    
+
+    def get_event_details(self, title: str):
+        """Fetches details for a specific event based on its title."""
+        query_result = self.db.run(f"SELECT * FROM calendar_event WHERE {title} AND user_id = {self.user_id};")
+        if query_result:
+            return query_result
+        else:
+            return "No event found with the provided title."
+
+   
+    def run(self, prompt: str):
+        """Runs the agent with the provided prompt."""
+        # # Define the prompt template and LLMChain inside the run method
+        # prompt_template = f"""
+        # Summarize the following content in calendar
+        # """
+        # llm_chain = LLMChain(
+        #     llm=self.llm,
+        #     prompt=PromptTemplate.from_template(prompt_template)
+        # )
+        
+        # # Use LLMChain for processing the prompt
+        # processed_prompt = llm_chain.run({"content": prompt})
+        return self.agent.run(prompt)
 
 

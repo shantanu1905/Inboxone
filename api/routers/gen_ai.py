@@ -1,6 +1,6 @@
-from fastapi import APIRouter ,  HTTPException  , status
+from fastapi import APIRouter ,  HTTPException  
 import fastapi as _fastapi
-from fastapi.responses import JSONResponse , RedirectResponse
+from fastapi.responses import JSONResponse
 import schemas as _schemas
 import models as _models
 import sqlalchemy.orm as _orm
@@ -9,10 +9,9 @@ import database as _database
 from logger import Logger
 from typing import List
 from logger import Logger
-from sqlalchemy.orm import joinedload
 import os 
 from .nylas_datatype import *
-from generative_ai import improve_email , generate_email_reply, fetch_events_from_calendar
+from generative_ai import improve_email , generate_email_reply , CalendarEventAgent
 from dotenv import load_dotenv
 import json
 import requests
@@ -156,9 +155,6 @@ async def generate_autorelpy_messages(
         raise HTTPException(status_code=500, detail="Could not send autoreply messages")
     
 
-
-  
-    
 @router.get("/api/nylas/sync_calendar_events")
         
 def sync_calendar_events(db: _orm.Session =_fastapi.Depends(_database.get_db) ,
@@ -285,10 +281,19 @@ def sync_calendar_events(db: _orm.Session =_fastapi.Depends(_database.get_db) ,
                 }
                 all_extracted_data.append(extracted_info)
 
-                # Save the extracted info to the database
-                db_event = _models.CalendarData(**extracted_info)
-                db.add(db_event)
-                db.commit()
+                # Check if the event already exists in the database
+                db_event = db.query(_models.CalendarData).filter(_models.CalendarData.id == extracted_info["id"]).first()
+                
+                if db_event:
+                    # Update existing record
+                    for key, value in extracted_info.items():
+                        setattr(db_event, key, value)
+                    db.commit()
+                else:
+                    # Insert new record
+                    db_event = _models.CalendarData(**extracted_info)
+                    db.add(db_event)
+                    db.commit()
 
         # After fetching and inserting events, delete old events
         current_time = datetime.now(pytz.utc).strftime('%Y-%m-%d %H:%M:%S')
@@ -298,7 +303,11 @@ def sync_calendar_events(db: _orm.Session =_fastapi.Depends(_database.get_db) ,
         ).delete(synchronize_session=False)
         db.commit()
 
-        return all_extracted_data
+        return {
+                "status": "success",
+                "message": "Calendar events sync successfully",
+                "data": all_extracted_data
+            },
     except Exception as e:
         # Log the error and return a proper HTTP exception
         print(f"An error occurred: {e}")
@@ -306,3 +315,36 @@ def sync_calendar_events(db: _orm.Session =_fastapi.Depends(_database.get_db) ,
     
 
 
+
+@router.get("/api/calendar_chatbot")
+def calendar_chatbot(
+    prompt : _schemas.CalendarChat , 
+    db: _orm.Session = _fastapi.Depends(_database.get_db),
+    user: _schemas.User = _fastapi.Depends(_services.get_current_user)
+):
+    try:
+        # Fetch the current user's API key from the database
+        db_user = db.query(_models.User).filter(_models.User.id == user.id).first()
+        if not db_user or not db_user.api_key:
+            raise _fastapi.HTTPException(status_code=401, detail="API key not found for the current user")
+        
+        agent = CalendarEventAgent(user_id=db_user.id ,db_uri="sqlite:///./database.db", google_api_key=gemini_api_key)
+
+        # prompt = "List all events"
+        result = agent.run(prompt)
+
+        return {
+                "status": "success",
+                "message": "response generated successfully",
+                "data": result
+            }
+        
+
+    except Exception as e:
+        # Log the error and return a proper HTTP exception
+        print(f"An error occurred: {e}")
+        raise _fastapi.HTTPException(status_code=500, detail="Failed to provide response, ask a different question")
+    
+
+
+    

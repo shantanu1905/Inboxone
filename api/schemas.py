@@ -115,3 +115,11 @@ class CalendarChat(pydantic.BaseModel):
     user_prompt : str
     class Config:
        from_attributes=True
+
+
+class DeleteEvents(pydantic.BaseModel):
+    grant_id: str
+    id : str
+    calendar_id : str
+    class Config:
+       from_attributes=True

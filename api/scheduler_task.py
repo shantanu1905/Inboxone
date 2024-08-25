@@ -13,9 +13,9 @@ scheduler = BackgroundScheduler()
 scheduler.start()
 
 # Schedule the recurring task
-scheduler.add_job(
-    my_recurring_task,
-    trigger=IntervalTrigger(seconds=10),  # Execute every 10 seconds
-    id='my_recurring_task',
-    replace_existing=True
-)
+# scheduler.add_job(
+#     my_recurring_task,
+#     trigger=IntervalTrigger(seconds=10),  # Execute every 10 seconds
+#     id='my_recurring_task',
+#     replace_existing=True
+# )

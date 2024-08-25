@@ -17,3 +17,5 @@ langchain-community
 langchain-google-genai
 pytz
 apscheduler
+langchain-experimental   review
+# psycopg2-binary
