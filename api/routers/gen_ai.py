@@ -11,11 +11,12 @@ from typing import List
 from logger import Logger
 import os 
 from .nylas_datatype import *
-from generative_ai import improve_email , generate_email_reply , CalendarEventAgent
+from generative_ai import improve_email , generate_email_reply , CalendarEventSQLRAGChain
 from dotenv import load_dotenv
 import json
 import requests
 from datetime import datetime
+from database import DATABASE_URL
 import pytz  # You'll need to install the pytz library for timezone handling
 
 load_dotenv()
@@ -314,9 +315,7 @@ def sync_calendar_events(db: _orm.Session =_fastapi.Depends(_database.get_db) ,
         raise HTTPException(status_code=500, detail="sync failed !")
     
 
-
-
-@router.get("/api/calendar_chatbot")
+@router.post("/api/calendar_chatbot")
 def calendar_chatbot(
     prompt : _schemas.CalendarChat , 
     db: _orm.Session = _fastapi.Depends(_database.get_db),
@@ -327,16 +326,18 @@ def calendar_chatbot(
         db_user = db.query(_models.User).filter(_models.User.id == user.id).first()
         if not db_user or not db_user.api_key:
             raise _fastapi.HTTPException(status_code=401, detail="API key not found for the current user")
-        
-        agent = CalendarEventAgent(user_id=db_user.id ,db_uri="sqlite:///./database.db", google_api_key=gemini_api_key)
+    
+        sql_rag_chain = CalendarEventSQLRAGChain(google_api_key=gemini_api_key , user_id=db_user.id)
+    
+        answer = sql_rag_chain.retrieve_answer(prompt.user_prompt)
 
-        # prompt = "List all events"
-        result = agent.run(prompt)
+        # Debugging information
+        print(f"Retrieved Answer: {answer}")
 
         return {
                 "status": "success",
                 "message": "response generated successfully",
-                "data": result
+                "data": answer
             }
         
 
@@ -347,4 +348,3 @@ def calendar_chatbot(
     
 
 
-    

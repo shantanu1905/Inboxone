@@ -1,16 +1,20 @@
 import google.generativeai as genai
+from langchain_community.vectorstores import FAISS
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI  
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_community.agent_toolkits import create_sql_agent
 from langchain_community.utilities import SQLDatabase
-from langchain.tools import Tool
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.agents import initialize_agent, AgentType
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+import os
 from dotenv import load_dotenv
 import sqlalchemy.orm as _orm
 import models as _models
 from nylas import Client
 import os
 import datetime
+# Database URL for SQLite
+DATABASE_URL = "sqlite:///./database.db"
 load_dotenv()
 
 # Retrieve environment variables
@@ -136,81 +140,73 @@ def delete_calendar_event(nylas_api_key:str,nylas_api_uri:str , nylas_grant_id:s
     return event
 
 
-class CalendarEventAgent:
-    def __init__(self, user_id: str, db_uri: str, google_api_key: str, llm_model: str = "gemini-pro"):
-        """
-        Initialize the CalendarEventAgent with the database connection and LLM model.
-        
-        :param user_id: The ID of the user for whom the events are being fetched.
-        :param db_uri: URI for the SQLite database.
-        :param google_api_key: Google API key for the LLM.
-        :param llm_model: Model name for the LLM (default: "gemini-pro").
-        """
+
+class CalendarEventSQLRAGChain:
+    def __init__(self, google_api_key, user_id):
+        self.db_path = "sqlite:///./database.db"  # Adjust path as needed
+        self.google_api_key = google_api_key
         self.user_id = user_id
-        self.llm = ChatGoogleGenerativeAI(model=llm_model, google_api_key=google_api_key)
-        self.db = SQLDatabase.from_uri(db_uri)
-        self.tools = self._create_tools()
-        self.agent = self._initialize_agent()
-
-    def _create_tools(self):
-        """Creates tools for listing and summarizing events."""
-        list_events_tool = Tool.from_function(
-            func=self.list_events,
-            name="ListEvents",
-            description="Retrieve all calendar events/meetings/call for the specified user."
+        
+        # Initialize the LLM
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash",
+            temperature=0.3,
+            max_tokens=500,
+            google_api_key=self.google_api_key
         )
-
-        # Tool to provide details for a specific event based on its title
-        event_details_tool = Tool.from_function(
-                            func=self.get_event_details,
-                            name="GetEventDetails",
-                            description="Retrieve details for a specific event, meeting, or call based on the title provided."
-                        )
-
-
-        return [list_events_tool,event_details_tool]
-
-    def _initialize_agent(self): 
-        """Initializes the AI agent with the available tools."""
-        return initialize_agent(
-            tools=self.tools,
-            agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-            llm=self.llm,
+        
+        # Initialize the SQL database
+        self.db = SQLDatabase.from_uri(self.db_path)
+        
+        # Create the SQL agent
+        self.agent_executor = create_sql_agent(
+            self.llm,
+            db=self.db,
+            agent_type="zero-shot-react-description",
             verbose=True
         )
-    
-
-
-    def list_events(self, *args, **kwargs):
-        """Fetches all events for the user from the calendar_event table."""
-        query_result = self.db.run(f"SELECT * FROM calendar_event WHERE user_id = {self.user_id};")
-        return query_result
-    
-    
-    
-
-    def get_event_details(self, title: str):
-        """Fetches details for a specific event based on its title."""
-        query_result = self.db.run(f"SELECT * FROM calendar_event WHERE {title} AND user_id = {self.user_id};")
-        if query_result:
-            return query_result
-        else:
-            return "No event found with the provided title."
-
-   
-    def run(self, prompt: str):
-        """Runs the agent with the provided prompt."""
-        # # Define the prompt template and LLMChain inside the run method
-        # prompt_template = f"""
-        # Summarize the following content in calendar
-        # """
-        # llm_chain = LLMChain(
-        #     llm=self.llm,
-        #     prompt=PromptTemplate.from_template(prompt_template)
-        # )
         
-        # # Use LLMChain for processing the prompt
-        # processed_prompt = llm_chain.run({"content": prompt})
-        return self.agent.run(prompt)
+        # Initialize the embeddings model
+        self.embeddings_model = GoogleGenerativeAIEmbeddings(
+            model="models/embedding-001",
+            google_api_key=self.google_api_key
+        )
+        
+        # Create the prompt and question-answer chain
+        self.prompt = self._create_prompt()
+        self.question_answer_chain = create_stuff_documents_chain(self.llm, self.prompt)
+    
+    def _create_prompt(self):
+        system_prompt = (
+            "You are an assistant for question-answering tasks. "
+            "Use the following pieces of retrieved context to answer "
+            f"the question. If you don't know the answer, say that you "
+            f"Extract data from the calendar_event table where user_id={self.user_id}. "
+            "Use four sentences maximum and keep the "
+            "answer concise."
+            "\n\n"
+            "{context}"
+        )
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", system_prompt),
+                ("human", "{input}"),
+            ]
+        )
+        return prompt
 
+    def query_sql(self, question):
+        query_result = self.agent_executor({"input": question})
+        return query_result.get("output", "")
 
+    def create_vectorstore(self, texts):
+        return FAISS.from_texts(texts, self.embeddings_model)
+
+    def retrieve_answer(self, question):
+        query_result = self.query_sql(question)
+        texts = [query_result]  # Assuming query_result is a string
+        vectorstore = self.create_vectorstore(texts)
+        retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 10})
+        rag_chain = create_retrieval_chain(retriever, self.question_answer_chain)
+        response = rag_chain.invoke({"input": question})
+        return response.get("answer", "No answer available.")
