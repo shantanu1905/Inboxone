@@ -18,4 +18,5 @@ langchain-google-genai
 pytz
 apscheduler
 langchain-experimental   review
+faiss-cpu
 # psycopg2-binary
