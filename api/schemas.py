@@ -123,3 +123,12 @@ class DeleteEvents(pydantic.BaseModel):
     calendar_id : str
     class Config:
        from_attributes=True
+
+
+
+
+class GetThreads(pydantic.BaseModel):
+    grant_id: str
+    thread_id: str
+    class Config:
+       from_attributes=True
