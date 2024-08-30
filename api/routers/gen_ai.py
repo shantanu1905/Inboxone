@@ -11,14 +11,14 @@ from typing import List
 from logger import Logger
 import os 
 from .nylas_datatype import *
-from generative_ai import improve_email , generate_email_reply , CalendarEventSQLRAGChain
+from generative_ai import improve_email , generate_email_reply , CalendarEventSQLRAGChain , summarize_emails
 from dotenv import load_dotenv
 import json
 import requests
 from datetime import datetime
 from database import DATABASE_URL
 import pytz  # You'll need to install the pytz library for timezone handling
-
+from bs4 import BeautifulSoup
 load_dotenv()
 
 
@@ -348,3 +348,95 @@ def calendar_chatbot(
     
 
 
+
+
+
+@router.post("/api/nylas/email_thread_summary")
+# NEEDTO UPDATE SCHEMA WORKING FOR SINGLE GRANT ID WE HAVE TO TAKES LIST OF GRANT ID
+async def email_thread_summary(
+    get_threads :_schemas.GetThreads,
+    user: _schemas.User = _fastapi.Depends(_services.get_current_user),  # Fetch the current user
+    db: _orm.Session =_fastapi.Depends(_database.get_db)  # Dependency for database session
+):
+    try:
+        # Fetch the current user's API key and grant ID from the database
+        db_user = db.query(_models.User).filter(_models.User.id == user.id).first()
+        if not db_user or not db_user.api_key:
+            raise HTTPException(status_code=401, detail="API key not found for the current user")
+        
+        # Retrieve the grant ID from environment variable or database
+        grant_ids = get_threads.grant_id
+        if not grant_ids:
+            raise HTTPException(status_code=400, detail="Grant ID not found")
+        
+        
+        # Extracting threads data
+      
+        url = f"https://api.us.nylas.com/v3/grants/{grant_ids}/threads/{get_threads.thread_id}"
+        headers = {
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {db_user.api_key}',
+            'Content-Type': 'application/json',
+        }
+
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"Failed to fetch threads: {response.text}")
+        # Convert the response content to JSON
+        response_data = response.json()
+        # Extract message_ids from the response
+        message_ids = response_data.get('data', {}).get('message_ids', [])
+
+
+
+         # Initialize a list to store message details
+        all_messages = []
+
+        # Loop over the message_ids and fetch each message
+        for message_id in message_ids:
+            message_url = f"https://api.us.nylas.com/v3/grants/{grant_ids}/messages/{message_id}"
+            message_response = requests.get(message_url, headers=headers)
+            if message_response.status_code != 200:
+                raise HTTPException(status_code=message_response.status_code, detail=f"Failed to fetch message {message_id}: {message_response.text}")
+            message_data = message_response.json()
+
+            message_info = message_data.get("data", {})  # Access the 'data' key in the response
+        
+            # Extract relevant fields
+            subject = message_info.get("subject", "")
+            snippet = message_info.get("snippet", "")
+            body = message_info.get("body", "")
+            date_timestamp = message_info.get("date", 0)
+            
+            # Convert the timestamp to a readable date format if it's not zero
+            date = datetime.fromtimestamp(date_timestamp).strftime('%Y-%m-%d %H:%M:%S') if date_timestamp else "Unknown Date"
+
+            ## Parse the HTML content using BeautifulSoup
+            soup = BeautifulSoup(body, 'html.parser')
+
+            # Extract the text content
+            msg_body_text = soup.get_text(separator="\n")
+            
+            # Add the extracted details to the list
+            all_messages.append({
+                "subject": subject,
+                "snippet": snippet,
+                "body": msg_body_text,
+                "date": date
+            })
+
+        summary = summarize_emails(gemini_api_key ,all_messages)
+
+        return JSONResponse(
+            content={
+                "status": "success",
+                "message": f"summary for thread_id {get_threads.thread_id} generated successfully",
+                "data": summary
+            },
+            status_code=200
+        )
+    
+    except Exception as e:
+        # Log the error and return a proper HTTP exception
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Could not generate summary")

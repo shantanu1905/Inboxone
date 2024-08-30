@@ -9,19 +9,22 @@ import database as _database
 from logger import Logger
 from typing import List
 from nylas import Client
+from datetime import datetime
 import os 
 import requests
 from .nylas_datatype import *
 # Retrieve environment variables
 API_URI = os.environ.get("API_URI")
 REDIRECT_CLIENT_URI = 'https://api.us.nylas.com/connect/callback'
-
+gemini_api_key = os.environ.get("GEMINI_API_KEYY")
 # Create an instance of the Logger class
 logger_instance = Logger()
 # Get a logger for your module
 logger = logger_instance.get_logger("stock market api")
 router = APIRouter(
     tags=["Nylas_Email"],)
+
+
 
 
 @router.post("/api/nylas/messages")
@@ -134,7 +137,6 @@ async def delete_messages(
     
 
 @router.post("/api/nylas/read_messages")
-# NEEDTO UPDATE SCHEMA WORKING FOR SINGLE GRANT ID WE HAVE TO TAKES LIST OF GRANT ID
 async def read_messages(
     read_email :_schemas.ReadEmails,
     user: _schemas.User = _fastapi.Depends(_services.get_current_user),  # Fetch the current user

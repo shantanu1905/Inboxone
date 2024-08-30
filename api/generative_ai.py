@@ -12,7 +12,7 @@ import sqlalchemy.orm as _orm
 import models as _models
 from nylas import Client
 import os
-import datetime
+from datetime import datetime
 # Database URL for SQLite
 DATABASE_URL = "sqlite:///./database.db"
 load_dotenv()
@@ -210,3 +210,67 @@ class CalendarEventSQLRAGChain:
         rag_chain = create_retrieval_chain(retriever, self.question_answer_chain)
         response = rag_chain.invoke({"input": question})
         return response.get("answer", "No answer available.")
+    
+
+
+
+
+def summarize_emails(google_api_key, emails):
+    """
+    Summarizes email conversations by sorting them by date, generating a summary, and refining it using the ChatGoogleGenerativeAI model.
+
+    Parameters:
+    - emails: List of dictionaries containing email data (subject, snippet, body, date).
+    - google_api_key: API key for Google Generative AI.
+
+    Returns:
+    - final_summary: A refined summary of the email conversation.
+    """
+    # Sort emails by date
+    emails.sort(key=lambda x: datetime.strptime(x['date'], '%Y-%m-%d %H:%M:%S'))
+
+    # Generate a summary
+    summary = []
+
+    for email in emails:
+        sender = email['body'].split("\n")[1].strip()
+        date = email['date']
+        subject = email['subject']
+        body_start = email['snippet'][:100]  # A snippet of the body for context
+
+        summary.append(f"On {date}, {sender} sent an email regarding '{subject}'. The message started with: '{body_start}'...")
+
+    # Combine summary into a single string
+    final_summary = "\n".join(summary)
+
+    # Initialize the language model
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash",
+        temperature=0.3,
+        max_tokens=500,
+        google_api_key=google_api_key
+    )
+
+    # Create the system prompt
+    system_prompt = (
+        "You are an assistant trained to summarize email conversations. "
+        "Given a collection of email messages, your task is to generate a concise summary of the conversation, including the key details and the dates of the messages. "
+        "Ensure that the summary includes the dates in chronological order and highlights the main points of each email. If necessary, group related emails together and summarize their content in a coherent manner."
+        "\n\n"
+        f"Here is the email conversation:\n{final_summary}\n"
+        "Based on the above conversation, please provide a summary including the dates."
+    )
+
+    # Create messages for the model
+    messages = [
+        ("system", system_prompt),
+        ("human", "Please provide a concise summary of the above email conversation.")
+    ]
+
+    # Get the refined summary from the model
+    result = llm.invoke(messages)
+
+    return result.content
+
+
+    
