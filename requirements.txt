@@ -17,6 +17,6 @@ langchain-community
 langchain-google-genai
 pytz
 apscheduler
-langchain-experimental   review
+langchain-experimental 
 faiss-cpu
-# psycopg2-binary
+beautifulsoup4
