@@ -16,6 +16,13 @@ Our application leverages the **Nylas API**, which provides a single API for ema
 - **Google Gemini:** Gemini API for  AI.
 - **Nylas API:** Email, calendar, and contacts API.
 - **Code:** For Backend FastAPI and Frontend ReactNative
+- **Frontend Repo:** https://github.com/sam-79/NylasConnect
+
+
+
+## Screenshots
+![how to create your (1)](https://github.com/user-attachments/assets/d69669dc-dbf8-4fb7-aa3f-b098459ba7a0)
+
 
 ## Setup Instructions
 ### Prerequisites:
