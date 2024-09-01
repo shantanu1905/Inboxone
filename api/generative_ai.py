@@ -180,7 +180,7 @@ class CalendarEventSQLRAGChain:
         system_prompt = (
             "You are an assistant for question-answering tasks. "
             "Use the following pieces of retrieved context to answer "
-            f"the question. If you don't know the answer, say that you "
+            "the question. If you don't know the answer, say that you "
             f"Extract data from the calendar_event table where user_id={self.user_id}. "
             "Use four sentences maximum and keep the "
             "answer concise."
@@ -197,22 +197,36 @@ class CalendarEventSQLRAGChain:
 
     def query_sql(self, question):
         query_result = self.agent_executor({"input": question})
-        return query_result.get("output", "")
+        result_output = query_result.get("output", "")
+        
+        # Check if the result is empty or indicates no events
+        if not result_output.strip():
+            return "No events today."
+        
+        return result_output
 
     def create_vectorstore(self, texts):
         return FAISS.from_texts(texts, self.embeddings_model)
 
     def retrieve_answer(self, question):
         query_result = self.query_sql(question)
+        
+        # If the query result indicates no events, return it immediately
+        if query_result == "No events today.":
+            return query_result
+        
         texts = [query_result]  # Assuming query_result is a string
         vectorstore = self.create_vectorstore(texts)
         retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 10})
         rag_chain = create_retrieval_chain(retriever, self.question_answer_chain)
         response = rag_chain.invoke({"input": question})
-        return response.get("answer", "No answer available.")
-    
-
-
+        
+        # Extract context from the RAG chain response
+        context = response.get("context", [])
+        context_texts = [doc.page_content for doc in context if hasattr(doc, 'page_content')]
+        context_text = " ".join(context_texts)
+        
+        return context_text if context_text else "No events found."
 
 
 def summarize_emails(google_api_key, emails):
@@ -273,4 +287,4 @@ def summarize_emails(google_api_key, emails):
     return result.content
 
 
-    
+
