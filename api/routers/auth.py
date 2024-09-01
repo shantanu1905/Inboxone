@@ -54,9 +54,13 @@ async def create_user(
     db_user = await _services.get_user_by_email(email=user.email, db=db)
 
     if db_user:
+
+        if db_user.is_verified is None:
+            db_user.is_verified = False
+
         logger.info('User with that email already exists')
         response = {
-            "is_verified": False,
+            "is_verified": db_user.is_verified,
             "msg":"User with that email already exists"
         }
         
@@ -67,7 +71,7 @@ async def create_user(
 
     user = await _services.create_user(user=user, db=db)
     response = {
-            "is_verified": False,
+            "is_verified": False,  # Since the user is newly registered, they won't be verified yet
             "msg":"User Registered, Please verify email to activate account !"
         }
 
@@ -363,6 +367,7 @@ async def sync_grants(
 
     return JSONResponse(
         content={
+            "data": response_data ,
             "status": "success",
             "message": "Grants synced successfully",
             
